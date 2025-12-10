@@ -1,6 +1,6 @@
 # Sentiment Analysis Project
 
-This project is a web application that predicts the sentiment (positive/negative/neutral) of user-provided text. It features a user-friendly web interface built with **Flask** and leverages pre-trained Machine Learning models for accurate predictions.
+This project is a web application that predicts the sentiment (positive/negative) of user-provided text. It features a user-friendly web interface built with **Flask** and leverages pre-trained Machine Learning models for accurate predictions.
 
 ## 📂 Project Structure
 
