@@ -1,0 +1,19 @@
+# Ignore the virtual environment
+.venv/
+venv/
+
+# Ignore compiled python files
+__pycache__/
+*.pyc
+
+# Ignore logs
+*.log
+sentiment_analysis.log
+
+# Ignore IDE settings
+.idea/
+.vscode/
+
+# Optional: Ignore large model files if they are >100MB
+# *.h5
+# *.joblib

@@ -1,0 +1,16 @@
+#fastapi==0.103.2
+#uvicorn==0.23.2
+pandas==2.1.4 # for data manipulation and analysis
+numpy==1.26.4 # for numerical computing and mathematical fun
+scikit-learn==1.4.1.post1 # for handling SVM
+tensorflow==2.14.0 # for handling LSTM
+#transformers==4.38.2
+nltk==3.8.1  # NLP toolkit for text precessing
+joblib==1.4.2 # for saving and loading trained machine learning models
+#python-multipart==0.0.9
+kaggle==1.6.14 # To load dataset
+Flask~=3.1.0 # Backend web framework
+Flask-SocketIO==5.5.1 # extension of flask for live feedback
+eventlet # event are manged for SocketIO
+
+chardet~=5.2.0  #for encoding text data

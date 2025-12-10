@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sentiment Analysis</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 900px; margin: 20px auto; padding: 20px; background-color: #f4f4f4; }
+        h2, h3, h4 { color: #333; }
+        form { margin-bottom: 20px; }
+        input[type="text"] { padding: 8px; width: 250px; margin-right: 10px; }
+        button { padding: 8px 16px; background-color: #007bff; color: white; border: none; cursor: pointer; transition: background-color 0.3s; }
+        button:hover { background-color: #0056b3; }
+        #progressContainer { width: 100%; background: #ddd; border-radius: 5px; margin: 20px 0; display: none; overflow: hidden; }
+        #progressBar { height: 30px; background: #007bff; text-align: center; color: white; line-height: 30px; transition: width 0.5s ease-in-out; }
+        #statusMessage { font-weight: bold; color: #555; }
+        canvas { margin: 20px 0; max-height: 400px; }
+        #confusionMatrices table { border-collapse: collapse; margin-bottom: 20px; }
+        #confusionMatrices th, #confusionMatrices td { border: 1px solid #ccc; padding: 8px; text-align: center; }
+        #confusionMatrices th { background-color: #007bff; color: white; }
+        #tuningSuggestions { margin-top: 20px; padding: 10px; background: #fff; border: 1px solid #ddd; border-radius: 5px; }
+        .cm-details { margin-top: 10px; padding: 10px; background: #fff; border: 1px solid #ddd; border-radius: 5px; }
+        .cm-details p { margin: 5px 0; }
+        .cm-details ul { padding-left: 20px; }
+        .tuning-details ul { padding-left: 20px; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .fade-in { animation: fadeIn 1s ease-in; }
+    </style>
+</head>
+<body>
+    <h2>Sentiment Analysis</h2>
+
+    <form id="analysisForm">
+        <label for="dataset_name">Dataset Name:</label>
+        <input type="text" id="dataset_name" placeholder="e.g., sentiment140/dataset" required>
+        <input type="checkbox" id="retrain" name="retrain">
+        <label for="retrain">Retrain Models</label>
+        <button type="submit">Start Analysis</button>
+    </form>
+
+    <div id="progressContainer">
+        <div id="progressBar">0%</div>
+    </div>
+    <p id="statusMessage"></p>
+
+    <canvas id="metricsChart"></canvas>
+
+    <h3>Confusion Matrices</h3>
+    <div id="confusionMatrices"></div>
+
+    <h3>Tuning Suggestions</h3>
+    <div id="tuningSuggestions"></div>
+
+    <script>
+        const socket = io.connect("http://127.0.0.1:5000");
+        const ctx = document.getElementById("metricsChart").getContext("2d");
+
+        let chartData = {
+            labels: [],
+            datasets: [
+                { label: "Accuracy", backgroundColor: "rgba(0, 123, 255, 0.7)", data: [] },
+                { label: "Precision", backgroundColor: "rgba(40, 167, 69, 0.7)", data: [] },
+                { label: "Recall", backgroundColor: "rgba(255, 159, 64, 0.7)", data: [] },
+                { label: "F1 Score", backgroundColor: "rgba(220, 53, 69, 0.7)", data: [] }
+            ]
+        };
+        let metricsChart = new Chart(ctx, {
+            type: "bar",
+            data: chartData,
+            options: {
+                responsive: true,
+                scales: {
+                    y: { beginAtZero: true, max: 1, title: { display: true, text: "Score" } },
+                    x: { title: { display: true, text: "Model" } }
+                },
+                animation: { duration: 1000, easing: "easeInOutQuad" }
+            }
+        });
+
+        document.getElementById("analysisForm").addEventListener("submit", function(event) {
+            event.preventDefault();
+            const datasetName = document.getElementById("dataset_name").value;
+            const retrain = document.getElementById("retrain").checked;
+
+            document.getElementById("statusMessage").innerText = "Starting analysis...";
+            document.getElementById("progressContainer").style.display = "block";
+            const progressBar = document.getElementById("progressBar");
+            progressBar.style.width = "0%";
+            progressBar.innerText = "0%";
+            progressBar.style.background = "#007bff";
+            chartData.labels = [];
+            chartData.datasets.forEach(dataset => dataset.data = []);
+            metricsChart.update();
+            document.getElementById("confusionMatrices").innerHTML = "";
+            document.getElementById("tuningSuggestions").innerHTML = "";
+
+            socket.emit("start_analysis", { dataset_name: datasetName, retrain: retrain });
+        });
+
+        socket.on("progress", function(data) {
+            console.log(`Progress: ${data.percentage}% - ${data.message}`);
+            const progressBar = document.getElementById("progressBar");
+            progressBar.style.width = data.percentage + "%";
+            progressBar.innerText = `${data.percentage}%`;
+            document.getElementById("statusMessage").innerText = data.message;
+        });
+
+        socket.on("update_metrics", function(data) {
+            chartData.labels.push(data.model);
+            chartData.datasets[0].data.push(data.accuracy);
+            chartData.datasets[1].data.push(data.precision);
+            chartData.datasets[2].data.push(data.recall);
+            chartData.datasets[3].data.push(data.f1_score);
+            metricsChart.update();
+        });
+
+        socket.on("final_results", function(data) {
+            console.log("Final results:", data);
+            document.getElementById("statusMessage").innerText = "Analysis Completed!";
+            const progressBar = document.getElementById("progressBar");
+            progressBar.style.width = "100%";
+            progressBar.innerText = "100%";
+
+            const confusionMatrices = document.getElementById("confusionMatrices");
+            confusionMatrices.innerHTML = "";
+            if (data.metrics) {
+                Object.keys(data.metrics).forEach(model => {
+                    const cm = data.metrics[model].confusion_matrix;
+                    const [tn, fp] = cm[0];
+                    const [fn, tp] = cm[1];
+                    const totalNegatives = tn + fp;
+                    const totalPositives = fn + tp;
+                    const total = tn + fp + fn + tp;
+
+                    let analysis = "";
+                    if (fp > tn * 0.3) {
+                        analysis += "<p><strong>High False Positives:</strong> The model is over-predicting positives. This could be due to imbalanced data favoring positives or a low decision threshold.</p>";
+                    }
+                    if (fn > tp * 0.3) {
+                        analysis += "<p><strong>High False Negatives:</strong> The model is missing many positives. This might indicate insufficient training data for positives or a high decision threshold.</p>";
+                    }
+                    if (tn > fp * 2 && tp > fn * 2) {
+                        analysis += "<p><strong>Balanced Performance:</strong> The model is correctly identifying most negatives and positives with few errors.</p>";
+                    }
+
+                    let suggestions = "<h5>Improvement Suggestions:</h5><ul>";
+                    if (fp > tn * 0.3) {
+                        suggestions += "<li>Increase regularization (e.g., higher C in SVM, dropout in LSTM) to reduce false positives.</li>";
+                        suggestions += "<li>Adjust the decision threshold (e.g., lower it for SVM/LSTM) to be stricter on positives.</li>";
+                    }
+                    if (fn > tp * 0.3) {
+                        suggestions += "<li>Add more positive examples to the training data or use class weights to prioritize positives.</li>";
+                        suggestions += "<li>Lower the decision threshold to catch more positives.</li>";
+                    }
+                    if (model === "SVM") {
+                        suggestions += "<li>Experiment with n-grams in TF-IDF or a non-linear kernel (e.g., RBF) to capture complex patterns.</li>";
+                    }
+                    if (model === "LSTM") {
+                        suggestions += "<li>Increase epochs or add bidirectional LSTM layers to better model sequence dependencies.</li>";
+                    }
+                    suggestions += "</ul>";
+
+                    confusionMatrices.innerHTML += `
+                        <h4>${model}</h4>
+                        <table>
+                            <tr><th></th><th>Pred. Negative</th><th>Pred. Positive</th></tr>
+                            <tr><th>Act. Negative</th><td>${tn}</td><td>${fp}</td></tr>
+                            <tr><th>Act. Positive</th><td>${fn}</td><td>${tp}</td></tr>
+                        </table>
+                        <div class="cm-details">
+                            <p><strong>True Negatives (TN):</strong> ${tn} - Correctly predicted negatives (out of ${totalNegatives} actual negatives).</p>
+                            <p><strong>False Positives (FP):</strong> ${fp} - Incorrectly predicted as positive (Type I error).</p>
+                            <p><strong>False Negatives (FN):</strong> ${fn} - Missed positives (Type II error, out of ${totalPositives} actual positives).</p>
+                            <p><strong>True Positives (TP):</strong> ${tp} - Correctly predicted positives.</p>
+                            ${analysis}
+                            ${suggestions}
+                        </div>
+                    `;
+                });
+                confusionMatrices.classList.add("fade-in");
+            }
+
+            const tuningSuggestions = document.getElementById("tuningSuggestions");
+            tuningSuggestions.innerHTML = "";
+            if (data.analysis) {
+                const bestModelDetails = data.analysis.best_model_details;
+                tuningSuggestions.innerHTML = `
+                    <h4>Best Model: ${data.analysis.best_algorithm}</h4>
+                    <p>Accuracy: ${data.analysis.accuracy.toFixed(4)}, F1-Score: ${data.analysis.f1_score.toFixed(4)}</p>
+                    <p><strong>Why Chosen:</strong> ${bestModelDetails.why_won}</p>
+                    <p><strong>Dataset Considerations:</strong> ${bestModelDetails.dataset_context}</p>
+                    <div class="tuning-details">
+                        <h5>Tuning Suggestions for ${data.analysis.best_algorithm}:</h5>
+                        <ul>${data.analysis.tuning_suggestions[data.analysis.best_algorithm].split('\n').map(s => `<li>${s}</li>`).join('')}</ul>
+                        <h5>Choosing ${bestModelDetails.alternative.model} Instead:</h5>
+                        <ul>
+                            <li><strong>Why Consider:</strong> ${bestModelDetails.alternative.why_consider}</li>
+                            <li><strong>How to Improve:</strong> ${bestModelDetails.alternative.improve}</li>
+                        </ul>
+                    </div>
+                `;
+                tuningSuggestions.classList.add("fade-in");
+            }
+        });
+
+        socket.on("error", function(data) {
+            console.log("Error:", data);
+            document.getElementById("statusMessage").innerText = "Error: " + data.message;
+            document.getElementById("progressBar").style.background = "#dc3545";
+        });
+
+        socket.on('connect_ack', function(data) {
+            console.log(data.message);
+        });
+    </script>
+</body>
+</html>
